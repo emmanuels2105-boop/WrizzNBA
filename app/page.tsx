@@ -1,8 +1,10 @@
 import { Info } from "lucide-react";
 
+import { RefreshButton } from "@/components/refresh-button";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -17,9 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getUpcomingPredictions } from "@/lib/db";
+import { getLastRefreshedAt, getUpcomingPredictions } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 function formatGameDate(dateStr: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -28,6 +31,16 @@ function formatGameDate(dateStr: string): string {
     day: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${dateStr}T00:00:00Z`));
+}
+
+function formatLastRefreshed(iso: string | null): string {
+  if (!iso) return "Never";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
 }
 
 function HeaderTip({ label, tip }: { label: string; tip: string }) {
@@ -46,6 +59,7 @@ function HeaderTip({ label, tip }: { label: string; tip: string }) {
 
 export default function Home() {
   const predictions = getUpcomingPredictions();
+  const lastRefreshedAt = getLastRefreshedAt();
 
   return (
     <div className="flex flex-1 justify-center bg-background px-6 py-16">
@@ -67,6 +81,12 @@ export default function Home() {
                 ? `${predictions.length} players`
                 : "No predictions available"}
             </CardDescription>
+            <CardAction className="flex flex-col items-end gap-1.5">
+              <RefreshButton />
+              <span className="text-xs text-muted-foreground">
+                Last refreshed: {formatLastRefreshed(lastRefreshedAt)}
+              </span>
+            </CardAction>
           </CardHeader>
           <CardContent>
             {predictions.length === 0 ? (
