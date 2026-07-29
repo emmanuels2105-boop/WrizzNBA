@@ -82,8 +82,8 @@ export function LineChecker({ mean, stdev }: { mean: number; stdev: number }) {
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Over odds
               <Input
-                inputMode="numeric"
-                placeholder="-110"
+                inputMode="decimal"
+                placeholder="1.91"
                 value={overOdds}
                 onChange={(e) => setOverOdds(e.target.value)}
               />
@@ -91,8 +91,8 @@ export function LineChecker({ mean, stdev }: { mean: number; stdev: number }) {
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Under odds
               <Input
-                inputMode="numeric"
-                placeholder="-110"
+                inputMode="decimal"
+                placeholder="1.91"
                 value={underOdds}
                 onChange={(e) => setUnderOdds(e.target.value)}
               />

@@ -31,25 +31,26 @@ export function standardNormalCdf(z: number): number {
   return 0.5 * (1 + erf(z / Math.SQRT2));
 }
 
-// Net profit per $1 staked ("b" in Kelly terms).
-export function americanOddsToPayoutMultiplier(odds: number): number {
-  return odds < 0 ? 100 / -odds : odds / 100;
+// Net profit per $1 staked ("b" in Kelly terms). Decimal odds are a total
+// return multiplier (stake included), so subtracting 1 isolates the profit.
+export function decimalOddsToPayoutMultiplier(odds: number): number {
+  return odds - 1;
 }
 
-export function americanOddsToImpliedProbability(odds: number): number {
-  return odds < 0 ? -odds / (-odds + 100) : 100 / (odds + 100);
+export function decimalOddsToImpliedProbability(odds: number): number {
+  return 1 / odds;
 }
 
 // EV per $1 staked.
 export function expectedValue(probability: number, odds: number): number {
-  const payout = americanOddsToPayoutMultiplier(odds);
+  const payout = decimalOddsToPayoutMultiplier(odds);
   return probability * payout - (1 - probability);
 }
 
 // Full Kelly f* = (p*b - q) / b, halved for variance reduction, clamped to 0
 // (no bet) rather than a negative stake when the edge is negative.
 export function halfKellyFraction(probability: number, odds: number): number {
-  const b = americanOddsToPayoutMultiplier(odds);
+  const b = decimalOddsToPayoutMultiplier(odds);
   const q = 1 - probability;
   const fullKelly = (probability * b - q) / b;
   return Math.max(0, fullKelly / 2);
