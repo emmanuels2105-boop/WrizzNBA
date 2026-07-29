@@ -3,8 +3,10 @@ from dataclasses import dataclass
 from itertools import groupby
 
 from pipeline.backtest.metrics import mae, mape
+from pipeline.config import DEFAULT_MINUTES_WINDOW
 from pipeline.db import repository
 from pipeline.prediction.baseline import rolling_average_from_history
+from pipeline.prediction.minutes_based import minutes_based_prediction_from_history
 from pipeline.props import PropType
 
 
@@ -38,6 +40,41 @@ def run_backtest(
             else:
                 pairs.append((row["value"], prediction.value))
             history.append((row["season"], row["value"]))
+
+    mape_value, excluded = mape(pairs)
+    return BacktestReport(
+        n_evaluated=len(pairs),
+        n_skipped=skipped,
+        mae=mae(pairs) if pairs else float("nan"),
+        mape=mape_value,
+        mape_excluded_zero_actuals=excluded,
+    )
+
+
+def run_backtest_minutes_based(
+    conn: sqlite3.Connection,
+    prop_type: PropType,
+    seasons: list[str],
+    n: int = 10,
+    minutes_n: int = DEFAULT_MINUTES_WINDOW,
+) -> BacktestReport:
+    """Same walk-forward methodology as run_backtest, for the minutes-based model."""
+    rows = repository.fetch_all_minutes_stats_for_backtest(conn, prop_type.stat_column, seasons)
+
+    pairs: list[tuple[float, float]] = []
+    skipped = 0
+
+    for _player_id, player_rows in groupby(rows, key=lambda row: row["player_id"]):
+        history: list[tuple[str, float, float]] = []
+        for row in player_rows:
+            prediction = minutes_based_prediction_from_history(
+                history, row["season"], n, minutes_n
+            )
+            if prediction is None:
+                skipped += 1
+            else:
+                pairs.append((row["value"], prediction.value))
+            history.append((row["season"], row["minutes"], row["value"]))
 
     mape_value, excluded = mape(pairs)
     return BacktestReport(

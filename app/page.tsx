@@ -19,7 +19,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getLastRefreshedAt, getUpcomingPredictions } from "@/lib/db";
+import { getLastRefreshedAt, getUpcomingPredictions, type ConfidenceLevel } from "@/lib/db";
+
+const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
+  very_high: "Very High",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+// Single-hue sequential ramp (blue, light->dark = low->high confidence), an
+// ordinal use validated with dataviz's validate_palette.js --ordinal in both
+// light and dark mode (lightness monotone, adjacent step gaps >= 0.06 OKLCH L,
+// single hue, light-end contrast clears its surface in both modes). Text color
+// per step is picked from its own WCAG contrast against white/near-black --
+// the two lighter steps read better with dark text, the two darker with white.
+const CONFIDENCE_STYLE: Record<ConfidenceLevel, string> = {
+  low: "border-transparent bg-[#6da7ec] text-[#0b0b0b]",
+  medium: "border-transparent bg-[#3987e5] text-[#0b0b0b]",
+  high: "border-transparent bg-[#256abf] text-white",
+  very_high: "border-transparent bg-[#184f95] text-white",
+};
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -69,7 +89,7 @@ export default function Home() {
             WNBA Points Predictions
           </h1>
           <p className="text-sm text-muted-foreground">
-            Rolling 10-game average, projected for each team&apos;s next scheduled game.
+            Projected minutes &times; points-per-minute rate, for each team&apos;s next scheduled game.
           </p>
         </div>
 
@@ -111,13 +131,19 @@ export default function Home() {
                     <TableHead className="text-right">
                       <HeaderTip
                         label="Predicted"
-                        tip="Projected points from a rolling average of the player's last 10 games this season (falls back to last season's average early in the season)."
+                        tip="Projected minutes (last 5 games) multiplied by a points-per-minute rate (last 10 games). Falls back to last season's numbers early in the season."
                       />
                     </TableHead>
                     <TableHead className="text-right">
                       <HeaderTip
                         label="Range"
-                        tip="Expected range around the prediction (±1 standard deviation), based on how much the player's scoring varied over those games."
+                        tip="Expected range around the prediction (±1 standard deviation in projected minutes, scaled by the points-per-minute rate)."
+                      />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <HeaderTip
+                        label="Confidence"
+                        tip="How tight this prediction's range is relative to its value, compared to today's other predictions. Very High = tightest quarter of ranges; Low = widest quarter."
                       />
                     </TableHead>
                   </TableRow>
@@ -145,6 +171,11 @@ export default function Home() {
                         {prediction.predictedLow !== null && prediction.predictedHigh !== null
                           ? `${prediction.predictedLow.toFixed(1)} – ${prediction.predictedHigh.toFixed(1)}`
                           : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge className={CONFIDENCE_STYLE[prediction.confidence]}>
+                          {CONFIDENCE_LABEL[prediction.confidence]}
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}

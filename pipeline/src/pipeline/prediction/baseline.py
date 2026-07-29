@@ -1,9 +1,11 @@
 import sqlite3
 from dataclasses import dataclass
 from statistics import mean, stdev
-from typing import Optional
+from typing import Optional, TypeVar
 
 from pipeline.db import repository
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,29 @@ class Prediction:
 
 def previous_season(season: str) -> str:
     return str(int(season) - 1)
+
+
+def _select_window(history: list[tuple[str, T]], target_season: str, n: int) -> Optional[list[T]]:
+    """Season-reset/cold-start window selection shared by every prediction model.
+
+    Uses the last `n` items of `target_season` once enough exist, otherwise
+    falls back to the prior season's full set (cold start), then to whatever
+    partial current-season items exist, else None if there's no history at all.
+    Generic over the per-game payload (a single stat value, or a (minutes,
+    stat) pair) so every model applies the identical rule.
+    """
+    current = [value for season, value in history if season == target_season]
+    if len(current) >= n:
+        return current[-n:]
+
+    prior = [value for season, value in history if season == previous_season(target_season)]
+    if prior:
+        return prior
+
+    if current:
+        return current
+
+    return None
 
 
 def rolling_average_from_history(
@@ -29,18 +54,10 @@ def rolling_average_from_history(
     then to a partial average of whatever current-season games exist, else None
     if there's no history anywhere.
     """
-    current = [value for season, value in history if season == target_season]
-    if len(current) >= n:
-        return _prediction_from_window(current[-n:])
-
-    prior = [value for season, value in history if season == previous_season(target_season)]
-    if prior:
-        return _prediction_from_window(prior)
-
-    if current:
-        return _prediction_from_window(current)
-
-    return None
+    window = _select_window(history, target_season, n)
+    if window is None:
+        return None
+    return _prediction_from_window(window)
 
 
 def _prediction_from_window(window: list[float]) -> Prediction:

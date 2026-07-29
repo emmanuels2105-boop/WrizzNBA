@@ -218,6 +218,46 @@ def fetch_all_stats_for_backtest(
     ).fetchall()
 
 
+def get_player_minutes_history(
+    conn: sqlite3.Connection, player_id: int, stat_column: str
+) -> list[tuple[str, float, float]]:
+    if stat_column not in ALLOWED_STAT_COLUMNS:
+        raise ValueError(f"Unsupported stat column: {stat_column}")
+    rows = conn.execute(
+        f"""
+        SELECT g.season AS season, pgs.minutes AS minutes, pgs.{stat_column} AS value
+        FROM player_game_stats pgs
+        JOIN games g ON g.game_id = pgs.game_id
+        WHERE pgs.player_id = ? AND g.status = 'FINAL' AND pgs.minutes IS NOT NULL
+        ORDER BY g.game_date ASC, g.game_id ASC
+        """,
+        (player_id,),
+    ).fetchall()
+    return [
+        (row["season"], row["minutes"], row["value"]) for row in rows if row["value"] is not None
+    ]
+
+
+def fetch_all_minutes_stats_for_backtest(
+    conn: sqlite3.Connection, stat_column: str, seasons: list[str]
+) -> list[sqlite3.Row]:
+    if stat_column not in ALLOWED_STAT_COLUMNS:
+        raise ValueError(f"Unsupported stat column: {stat_column}")
+    placeholders = ",".join("?" for _ in seasons)
+    return conn.execute(
+        f"""
+        SELECT pgs.player_id AS player_id, g.season AS season, g.game_date AS game_date,
+               g.game_id AS game_id, pgs.minutes AS minutes, pgs.{stat_column} AS value
+        FROM player_game_stats pgs
+        JOIN games g ON g.game_id = pgs.game_id
+        WHERE g.status = 'FINAL' AND g.season IN ({placeholders})
+              AND pgs.minutes IS NOT NULL AND pgs.{stat_column} IS NOT NULL
+        ORDER BY pgs.player_id ASC, g.game_date ASC, g.game_id ASC
+        """,
+        seasons,
+    ).fetchall()
+
+
 def get_prop_type(conn: sqlite3.Connection, name: str) -> Optional[sqlite3.Row]:
     return conn.execute(
         "SELECT name, stat_column, description FROM prop_types WHERE name = ?", (name,)

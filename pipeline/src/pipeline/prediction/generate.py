@@ -2,11 +2,14 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from pipeline.config import DEFAULT_MINUTES_WINDOW
 from pipeline.db import repository
-from pipeline.prediction.baseline import predict_for_player
+from pipeline.prediction.minutes_based import predict_for_player_minutes_based
 from pipeline.props import PropType
 
-MODEL_NAME = "rolling_average"
+# minutes_based beat the plain rolling-average baseline in backtesting (MAE 4.196
+# vs 4.221 on 2024-2026 data) -- see pipeline/README.md for the comparison.
+MODEL_NAME = "minutes_based"
 MODEL_VERSION = "v1"
 
 
@@ -30,15 +33,18 @@ def _next_scheduled_game_per_team(conn: sqlite3.Connection) -> dict[int, sqlite3
 
 
 def generate_predictions(
-    conn: sqlite3.Connection, prop_type: PropType, n: int = 10
+    conn: sqlite3.Connection,
+    prop_type: PropType,
+    n: int = 10,
+    minutes_n: int = DEFAULT_MINUTES_WINDOW,
 ) -> GenerateSummary:
     summary = GenerateSummary()
     generated_at = datetime.now(timezone.utc).isoformat()
 
     for team_id, game in _next_scheduled_game_per_team(conn).items():
         for player in repository.get_players_for_team(conn, team_id):
-            prediction = predict_for_player(
-                conn, player["player_id"], prop_type.stat_column, game["season"], n
+            prediction = predict_for_player_minutes_based(
+                conn, player["player_id"], prop_type.stat_column, game["season"], n, minutes_n
             )
             if prediction is None:
                 summary.skipped_players.append((player["player_id"], player["full_name"]))

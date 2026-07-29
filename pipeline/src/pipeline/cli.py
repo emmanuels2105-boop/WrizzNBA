@@ -3,9 +3,14 @@ from typing import List
 
 import typer
 
-from pipeline.backtest.walk_forward import run_backtest
+from pipeline.backtest.walk_forward import run_backtest, run_backtest_minutes_based
 from pipeline.client.wnba_client import WnbaClient
-from pipeline.config import DEFAULT_DB_PATH, DEFAULT_ROLLING_WINDOW, DEFAULT_SEASONS
+from pipeline.config import (
+    DEFAULT_DB_PATH,
+    DEFAULT_MINUTES_WINDOW,
+    DEFAULT_ROLLING_WINDOW,
+    DEFAULT_SEASONS,
+)
 from pipeline.db.connection import get_connection, init_db
 from pipeline.ingest.sync import run_ingest
 from pipeline.prediction.generate import generate_predictions
@@ -61,19 +66,30 @@ def predict_command(
 
 @app.command("backtest")
 def backtest_command(
+    model: str = typer.Option(
+        "rolling_average", "--model", help="Model to backtest: rolling_average or minutes_based"
+    ),
     prop_type: str = typer.Option("POINTS", "--prop-type", help="Prop type to backtest"),
     seasons: List[str] = typer.Option(DEFAULT_SEASONS, "--season", help="Seasons to include, e.g. 2026"),
     n: int = typer.Option(DEFAULT_ROLLING_WINDOW, "--n", help="Rolling window size (games)"),
+    minutes_n: int = typer.Option(
+        DEFAULT_MINUTES_WINDOW, "--minutes-n", help="Minutes window size, minutes_based model only"
+    ),
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", help="Path to the SQLite database file"),
 ) -> None:
-    """Walk-forward backtest of the baseline model against stored game logs."""
+    """Walk-forward backtest of a model against stored game logs."""
     conn = get_connection(db_path)
     try:
-        report = run_backtest(conn, get_prop_type(prop_type), seasons, n)
+        if model == "rolling_average":
+            report = run_backtest(conn, get_prop_type(prop_type), seasons, n)
+        elif model == "minutes_based":
+            report = run_backtest_minutes_based(conn, get_prop_type(prop_type), seasons, n, minutes_n)
+        else:
+            raise typer.BadParameter("model must be 'rolling_average' or 'minutes_based'")
     finally:
         conn.close()
     typer.echo(
-        f"Backtest complete: n={n} evaluated={report.n_evaluated} skipped={report.n_skipped} "
+        f"Backtest complete ({model}): n={n} evaluated={report.n_evaluated} skipped={report.n_skipped} "
         f"MAE={report.mae:.3f} MAPE={report.mape:.3%} "
         f"(excluded {report.mape_excluded_zero_actuals} zero-actual games from MAPE)"
     )

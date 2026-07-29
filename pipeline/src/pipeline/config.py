@@ -9,3 +9,7 @@ SCHEDULE_URL = "https://cdn.wnba.com/static/json/staticData/scheduleLeagueV2_1.j
 
 DEFAULT_SEASONS = ["2024", "2025", "2026"]
 DEFAULT_ROLLING_WINDOW = 10
+# Shorter window for the minutes-based model's minutes projection -- deliberately
+# smaller than DEFAULT_ROLLING_WINDOW so it's responsive to recent role/rotation
+# changes, while the points-per-minute rate still uses the full, more stable window.
+DEFAULT_MINUTES_WINDOW = 5
