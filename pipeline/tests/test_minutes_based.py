@@ -1,4 +1,4 @@
-from pipeline.prediction.minutes_based import minutes_based_prediction_from_history
+from pipeline.prediction.minutes_based import is_lock_eligible, minutes_based_prediction_from_history
 
 
 def test_decoupled_windows_differ_from_plain_points_average():
@@ -61,3 +61,27 @@ def test_falls_back_to_prior_season_when_current_below_window():
 def test_returns_none_with_no_history_anywhere():
     pred = minutes_based_prediction_from_history([], target_season="2026", n=10, minutes_n=5)
     assert pred is None
+
+
+def test_lock_eligible_with_full_window_and_low_consistency():
+    history = [("2026", 30.0, 20.0)] * 10  # dead-consistent: CV = 0
+    assert is_lock_eligible(history, target_season="2026", n=10, cv_threshold=0.20) is True
+
+
+def test_lock_not_eligible_with_fewer_than_n_current_season_games():
+    # Only 9 current-season games, however consistent -- no cold-start/fallback allowed for locks.
+    history = [("2026", 30.0, 20.0)] * 9
+    assert is_lock_eligible(history, target_season="2026", n=10, cv_threshold=0.20) is False
+
+
+def test_lock_not_eligible_with_high_variance():
+    history = [("2026", 30.0, p) for p in [5, 25, 5, 25, 5, 25, 5, 25, 5, 25]]  # CV far above 0.20
+    assert is_lock_eligible(history, target_season="2026", n=10, cv_threshold=0.20) is False
+
+
+def test_lock_ignores_prior_season_games_toward_the_window():
+    # 8 current-season + 3 prior-season games -- current-season count (8) is what matters, still < n.
+    prior = [("2025", 30.0, 20.0)] * 3
+    current = [("2026", 30.0, 20.0)] * 8
+    history = prior + current
+    assert is_lock_eligible(history, target_season="2026", n=10, cv_threshold=0.20) is False

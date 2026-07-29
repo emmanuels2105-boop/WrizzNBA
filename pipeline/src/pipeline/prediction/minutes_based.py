@@ -2,7 +2,7 @@ import sqlite3
 from statistics import mean, stdev
 from typing import Optional
 
-from pipeline.config import DEFAULT_MINUTES_WINDOW
+from pipeline.config import DEFAULT_MINUTES_WINDOW, LOCK_CV_THRESHOLD, LOCK_WINDOW
 from pipeline.db import repository
 from pipeline.prediction.baseline import Prediction, _select_window
 
@@ -60,6 +60,43 @@ def minutes_based_prediction_from_history(
         return Prediction(value=predicted_minutes * rate, low=low, high=high)
 
     return Prediction(value=predicted_minutes * rate, low=None, high=None)
+
+
+def is_lock_eligible(
+    history: list[tuple[str, float, float]],
+    target_season: str,
+    n: int = LOCK_WINDOW,
+    cv_threshold: float = LOCK_CV_THRESHOLD,
+) -> bool:
+    """Whether a player's own recent scoring consistency earns the rare "It's a
+    lock" tier, on top of (not instead of) the normal Low/Medium/High/Very High
+    range-based confidence.
+
+    Empirical basis (see the walk-forward calibration run against 2024-2026 data
+    before this was added): neither the predicted range's absolute nor relative
+    width correlates with actual hit-rate/error the way "confidence" implies --
+    counterintuitively, *tighter* ranges had *worse* hit rates, because a narrow
+    absolute band around a high-usage star is easier to miss than a wide-looking
+    relative band around a bench player who barely deviates from near-zero. The
+    one signal that did show a real, monotonic relationship with lower relative
+    error was a player's own historical scoring consistency -- the coefficient of
+    variation (stdev/mean) of their last `n` games' points. Lower CV genuinely
+    predicts better relative accuracy (MAPE ~32% in the tightest historical CV
+    band vs. ~144% in the loosest) -- a real but modest edge, not a guarantee,
+    which is exactly why this is reserved for a strict cutoff and requires a full
+    window of *strictly current-season* games (no cold-start/prior-season
+    blending) so the CV estimate itself isn't diluted by stale data.
+    """
+    current_season_points = [points for season, _minutes, points in history if season == target_season]
+    if len(current_season_points) < n:
+        return False
+
+    window = current_season_points[-n:]
+    mean_points = mean(window)
+    if mean_points <= 0:
+        return False
+
+    return (stdev(window) / mean_points) < cv_threshold
 
 
 def predict_for_player_minutes_based(

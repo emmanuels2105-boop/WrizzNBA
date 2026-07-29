@@ -13,3 +13,9 @@ DEFAULT_ROLLING_WINDOW = 10
 # smaller than DEFAULT_ROLLING_WINDOW so it's responsive to recent role/rotation
 # changes, while the points-per-minute rate still uses the full, more stable window.
 DEFAULT_MINUTES_WINDOW = 5
+
+# "Lock" tier eligibility -- see is_lock_eligible() in prediction/minutes_based.py
+# for the empirical basis. Requires a full window of strictly current-season
+# games (LOCK_WINDOW), with points coefficient-of-variation under LOCK_CV_THRESHOLD.
+LOCK_WINDOW = 10
+LOCK_CV_THRESHOLD = 0.20

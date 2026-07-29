@@ -155,6 +155,33 @@
   }
 }
 
+/* "It's a lock" confidence badge -- a moving shimmer across a purple gradient.
+   Stops are kept in a darker/medium purple range (never the light end of the
+   ramp) so the bright-green text stays legible throughout the sweep: contrast
+   against #39ff6a measured 3.97-8.12 across these exact stops, but drops to an
+   unreadable ~2:1 with a lighter highlight like #c084fc -- deliberately avoided. */
+@keyframes confidence-lock-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.confidence-lock {
+  background-image: linear-gradient(115deg, #581c87 0%, #7c3aed 25%, #9333ea 50%, #7c3aed 75%, #581c87 100%);
+  background-size: 250% 100%;
+  animation: confidence-lock-shimmer 2.5s linear infinite;
+  color: #39ff6a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confidence-lock {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

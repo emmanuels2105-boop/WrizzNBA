@@ -72,6 +72,7 @@ SCHEMA_STATEMENTS = [
         predicted_value REAL NOT NULL,
         predicted_low REAL,
         predicted_high REAL,
+        is_lock INTEGER NOT NULL DEFAULT 0,
         model_name TEXT NOT NULL,
         model_version TEXT NOT NULL,
         generated_at TEXT NOT NULL,

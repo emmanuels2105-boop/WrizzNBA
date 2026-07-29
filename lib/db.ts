@@ -1,7 +1,7 @@
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export type ConfidenceLevel = "low" | "medium" | "high" | "very_high";
+export type ConfidenceLevel = "low" | "medium" | "high" | "very_high" | "lock";
 
 export type PointsPrediction = {
   playerName: string;
@@ -14,7 +14,10 @@ export type PointsPrediction = {
   confidence: ConfidenceLevel;
 };
 
-type RawPrediction = Omit<PointsPrediction, "confidence">;
+type RawPrediction = Omit<PointsPrediction, "confidence"> & { isLock: boolean };
+
+// Shape returned directly by node:sqlite -- is_lock is a SQLite INTEGER (0/1).
+type SqlRow = Omit<RawPrediction, "isLock"> & { isLock: number };
 
 const DB_PATH = path.join(process.cwd(), "pipeline", "data", "wnba.db");
 // Must match MODEL_NAME in pipeline/src/pipeline/prediction/generate.py -- the
@@ -58,9 +61,19 @@ function relativeHalfWidth(prediction: RawPrediction): number {
 // batch*, rather than fixed thresholds, so "Confidence" stays meaningful (and
 // roughly evenly distributed) as the underlying data's typical spread changes,
 // instead of drifting toward "everything is Low" or "everything is Very High".
+//
+// Rows flagged is_lock (isLock) by the pipeline -- based on the player's own
+// historical scoring consistency, not range width, see is_lock_eligible() in
+// prediction/minutes_based.py -- skip the quartile system entirely and get the
+// rare "lock" tier instead. They're excluded from the population used to
+// compute quartile boundaries for everyone else, since they're a separate tier.
 function withConfidenceLevels(predictions: RawPrediction[]): PointsPrediction[] {
-  const ranked = predictions
-    .map((prediction, index) => ({ index, width: relativeHalfWidth(prediction) }))
+  const nonLockedEntries = predictions
+    .map((prediction, index) => ({ index, prediction }))
+    .filter(({ prediction }) => !prediction.isLock);
+
+  const ranked = nonLockedEntries
+    .map(({ index, prediction }) => ({ index, width: relativeHalfWidth(prediction) }))
     .sort((a, b) => a.width - b.width);
 
   const confidenceByIndex = new Map<number, ConfidenceLevel>();
@@ -77,9 +90,9 @@ function withConfidenceLevels(predictions: RawPrediction[]): PointsPrediction[] 
     confidenceByIndex.set(index, confidence);
   });
 
-  return predictions.map((prediction, index) => ({
-    ...prediction,
-    confidence: confidenceByIndex.get(index) ?? "low",
+  return predictions.map(({ isLock, ...rest }, index) => ({
+    ...rest,
+    confidence: isLock ? "lock" : (confidenceByIndex.get(index) ?? "low"),
   }));
 }
 
@@ -92,7 +105,8 @@ export function getUpcomingPredictions(): PointsPrediction[] {
             `SELECT p.full_name AS playerName, t.abbreviation AS team,
                     opp.abbreviation AS opponent, g.game_date AS gameDate,
                     pr.predicted_value AS predictedValue,
-                    pr.predicted_low AS predictedLow, pr.predicted_high AS predictedHigh
+                    pr.predicted_low AS predictedLow, pr.predicted_high AS predictedHigh,
+                    pr.is_lock AS isLock
              FROM predictions pr
              JOIN players p ON p.player_id = pr.player_id
              JOIN teams t ON t.team_id = p.team_id
@@ -102,10 +116,11 @@ export function getUpcomingPredictions(): PointsPrediction[] {
              WHERE pr.prop_type = 'POINTS' AND pr.model_name = ?
              ORDER BY g.game_date ASC, pr.predicted_value DESC`,
           )
-          .all(CURRENT_MODEL_NAME) as unknown as RawPrediction[],
+          .all(CURRENT_MODEL_NAME) as unknown as SqlRow[],
     ) ?? [];
 
-  return withConfidenceLevels(rows);
+  const rawPredictions: RawPrediction[] = rows.map((row) => ({ ...row, isLock: row.isLock === 1 }));
+  return withConfidenceLevels(rawPredictions);
 }
 
 export function getLastRefreshedAt(): string | null {

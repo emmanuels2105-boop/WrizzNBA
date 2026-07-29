@@ -56,6 +56,7 @@ def predict_command(
     """Generate predictions for each team's next scheduled game."""
     conn = get_connection(db_path)
     try:
+        init_db(conn)  # idempotent -- applies any schema migrations (e.g. new columns)
         summary = generate_predictions(conn, get_prop_type(prop_type), n)
     finally:
         conn.close()

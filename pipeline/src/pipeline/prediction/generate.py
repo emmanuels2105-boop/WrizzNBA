@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from pipeline.config import DEFAULT_MINUTES_WINDOW
 from pipeline.db import repository
-from pipeline.prediction.minutes_based import predict_for_player_minutes_based
+from pipeline.prediction.minutes_based import (
+    is_lock_eligible,
+    minutes_based_prediction_from_history,
+)
 from pipeline.props import PropType
 
 # minutes_based beat the plain rolling-average baseline in backtesting (MAE 4.196
@@ -43,8 +46,11 @@ def generate_predictions(
 
     for team_id, game in _next_scheduled_game_per_team(conn).items():
         for player in repository.get_players_for_team(conn, team_id):
-            prediction = predict_for_player_minutes_based(
-                conn, player["player_id"], prop_type.stat_column, game["season"], n, minutes_n
+            history = repository.get_player_minutes_history(
+                conn, player["player_id"], prop_type.stat_column
+            )
+            prediction = minutes_based_prediction_from_history(
+                history, game["season"], n, minutes_n
             )
             if prediction is None:
                 summary.skipped_players.append((player["player_id"], player["full_name"]))
@@ -58,6 +64,7 @@ def generate_predictions(
                 predicted_value=prediction.value,
                 predicted_low=prediction.low,
                 predicted_high=prediction.high,
+                is_lock=is_lock_eligible(history, game["season"]),
                 model_name=MODEL_NAME,
                 model_version=MODEL_VERSION,
                 generated_at=generated_at,

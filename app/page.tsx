@@ -26,19 +26,22 @@ const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
   high: "High",
   medium: "Medium",
   low: "Low",
+  lock: "It's a Lock",
 };
 
-// Single-hue sequential ramp (blue, light->dark = low->high confidence), an
-// ordinal use validated with dataviz's validate_palette.js --ordinal in both
-// light and dark mode (lightness monotone, adjacent step gaps >= 0.06 OKLCH L,
-// single hue, light-end contrast clears its surface in both modes). Text color
-// per step is picked from its own WCAG contrast against white/near-black --
-// the two lighter steps read better with dark text, the two darker with white.
+// Red -> orange-yellow -> green -> bright green: a status-style read (bad to
+// good), each step's text color picked from its own WCAG contrast against
+// white/near-black (e.g. warning #fab219 only clears 1.8:1 with white text but
+// 10.7:1 with dark text). "lock" is a separate, rare tier layered on top of
+// this scale (see lib/db.ts) -- its shimmering purple/bright-green styling
+// lives in app/globals.css as `.confidence-lock` since it needs a CSS animation
+// gradient (background-position keyframes), not just a static Tailwind class.
 const CONFIDENCE_STYLE: Record<ConfidenceLevel, string> = {
-  low: "border-transparent bg-[#6da7ec] text-[#0b0b0b]",
-  medium: "border-transparent bg-[#3987e5] text-[#0b0b0b]",
-  high: "border-transparent bg-[#256abf] text-white",
-  very_high: "border-transparent bg-[#184f95] text-white",
+  low: "border-transparent bg-[#d03b3b] text-white",
+  medium: "border-transparent bg-[#fab219] text-[#0b0b0b]",
+  high: "border-transparent bg-[#0ca30c] text-[#0b0b0b]",
+  very_high: "border-transparent bg-[#22c55e] text-[#0b0b0b]",
+  lock: "confidence-lock border-transparent font-bold",
 };
 
 export const dynamic = "force-dynamic";
@@ -143,7 +146,7 @@ export default function Home() {
                     <TableHead className="text-right">
                       <HeaderTip
                         label="Confidence"
-                        tip="How tight this prediction's range is relative to its value, compared to today's other predictions. Very High = tightest quarter of ranges; Low = widest quarter."
+                        tip="How tight this prediction's range is relative to its value, compared to today's other predictions (Low = widest quarter, Very High = tightest quarter). It's a Lock is a separate, rare tier based on the player's own historical scoring consistency, not range width -- a real but modest edge, not a guarantee."
                       />
                     </TableHead>
                   </TableRow>
