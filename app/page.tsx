@@ -80,6 +80,17 @@ function HeaderTip({ label, tip }: { label: string; tip: string }) {
   );
 }
 
+function TeamBadge({ abbreviation, fullName }: { abbreviation: string; fullName: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline">{abbreviation}</Badge>
+      </TooltipTrigger>
+      <TooltipContent>{fullName}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function Home() {
   const predictions = getUpcomingPredictions();
   const lastRefreshedAt = getLastRefreshedAt();
@@ -160,9 +171,12 @@ export default function Home() {
                         {prediction.playerName}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        <Badge variant="outline">{prediction.team}</Badge>
+                        <TeamBadge abbreviation={prediction.team} fullName={prediction.teamFullName} />
                         <span className="mx-1.5">vs</span>
-                        <Badge variant="outline">{prediction.opponent}</Badge>
+                        <TeamBadge
+                          abbreviation={prediction.opponent}
+                          fullName={prediction.opponentFullName}
+                        />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatGameDate(prediction.gameDate)}

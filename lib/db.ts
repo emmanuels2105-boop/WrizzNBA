@@ -6,7 +6,9 @@ export type ConfidenceLevel = "low" | "medium" | "high" | "very_high" | "lock";
 export type PointsPrediction = {
   playerName: string;
   team: string;
+  teamFullName: string;
   opponent: string;
+  opponentFullName: string;
   gameDate: string;
   predictedValue: number;
   predictedLow: number | null;
@@ -103,7 +105,10 @@ export function getUpcomingPredictions(): PointsPrediction[] {
         db
           .prepare(
             `SELECT p.full_name AS playerName, t.abbreviation AS team,
-                    opp.abbreviation AS opponent, g.game_date AS gameDate,
+                    TRIM(COALESCE(t.city || ' ', '') || t.name) AS teamFullName,
+                    opp.abbreviation AS opponent,
+                    TRIM(COALESCE(opp.city || ' ', '') || opp.name) AS opponentFullName,
+                    g.game_date AS gameDate,
                     pr.predicted_value AS predictedValue,
                     pr.predicted_low AS predictedLow, pr.predicted_high AS predictedHigh,
                     pr.is_lock AS isLock
