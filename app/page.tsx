@@ -1,5 +1,6 @@
 import { Info } from "lucide-react";
 
+import { LineChecker } from "@/components/line-checker";
 import { RefreshButton } from "@/components/refresh-button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -160,6 +161,12 @@ export default function Home() {
                         tip="How tight this prediction's range is relative to its value, compared to today's other predictions (Low = widest quarter, Very High = tightest quarter). It's a Lock is a separate, rare tier based on the player's own historical scoring consistency, not range width -- a real but modest edge, not a guarantee."
                       />
                     </TableHead>
+                    <TableHead className="text-right">
+                      <HeaderTip
+                        label="Line"
+                        tip="Type in a book's line and odds to see this prediction's edge and a suggested half-Kelly stake for both sides."
+                      />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -193,6 +200,16 @@ export default function Home() {
                         <Badge className={CONFIDENCE_STYLE[prediction.confidence]}>
                           {CONFIDENCE_LABEL[prediction.confidence]}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {prediction.predictedLow !== null && prediction.predictedHigh !== null ? (
+                          <LineChecker
+                            mean={prediction.predictedValue}
+                            stdev={(prediction.predictedHigh - prediction.predictedLow) / 2}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
