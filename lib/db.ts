@@ -54,6 +54,7 @@ export function getUpcomingPredictions(): PointsPrediction[] {
              JOIN teams opp
                ON opp.team_id = CASE WHEN g.home_team_id = p.team_id THEN g.away_team_id ELSE g.home_team_id END
              WHERE pr.prop_type = 'POINTS' AND pr.model_name = ? AND pr.model_version = ?
+                   AND g.status = 'SCHEDULED'
              ORDER BY g.game_date ASC, pr.predicted_value DESC`,
           )
           .all(CURRENT_MODEL_NAME, CURRENT_MODEL_VERSION) as unknown as SqlRow[],
