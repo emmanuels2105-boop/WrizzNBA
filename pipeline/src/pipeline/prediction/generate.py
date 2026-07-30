@@ -2,18 +2,24 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from pipeline.config import DEFAULT_MINUTES_WINDOW
+from pipeline.config import DEFAULT_MINUTES_WINDOW, LOCK_WINDOW
 from pipeline.db import repository
 from pipeline.prediction.minutes_based import (
     is_lock_eligible,
     minutes_based_prediction_from_history,
+    scoring_cv,
 )
 from pipeline.props import PropType
 
 # minutes_based beat the plain rolling-average baseline in backtesting (MAE 4.196
 # vs 4.221 on 2024-2026 data) -- see pipeline/README.md for the comparison.
 MODEL_NAME = "minutes_based"
-MODEL_VERSION = "v1"
+# v2: confidence ranking switched from range-width (found inversely correlated
+# with accuracy) to scoring_cv, and predicted_low/high switched from a
+# minutes-variance range to an empirical residual range -- see config.py
+# RESIDUAL_STDEV_BY_TERCILE. Versioned rather than overwritten in place so the
+# v1 predictions used as backtest evidence for this change stay intact.
+MODEL_VERSION = "v2"
 
 
 @dataclass
@@ -65,6 +71,7 @@ def generate_predictions(
                 predicted_low=prediction.low,
                 predicted_high=prediction.high,
                 is_lock=is_lock_eligible(history, game["season"]),
+                scoring_cv=scoring_cv(history, game["season"], LOCK_WINDOW),
                 model_name=MODEL_NAME,
                 model_version=MODEL_VERSION,
                 generated_at=generated_at,

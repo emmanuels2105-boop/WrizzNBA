@@ -15,34 +15,34 @@ function prediction(overrides: Partial<RawPrediction>): RawPrediction {
     predictedLow: 8,
     predictedHigh: 12,
     isLock: false,
+    scoringCv: 0.2,
     ...overrides,
   };
 }
 
-test("buckets non-lock predictions into quartiles by relative range width, tightest first", () => {
-  // relative half-width = (high-low)/2 / value: 0.05, 0.15, 0.25, 0.35 -- evenly spread quartiles.
+test("buckets non-lock predictions into quartiles by scoring CV, most consistent first", () => {
   const predictions = [
-    prediction({ playerName: "Tightest", predictedValue: 10, predictedLow: 9.5, predictedHigh: 10.5 }),
-    prediction({ playerName: "Tight", predictedValue: 10, predictedLow: 8.5, predictedHigh: 11.5 }),
-    prediction({ playerName: "Wide", predictedValue: 10, predictedLow: 7.5, predictedHigh: 12.5 }),
-    prediction({ playerName: "Widest", predictedValue: 10, predictedLow: 6.5, predictedHigh: 13.5 }),
+    prediction({ playerName: "MostConsistent", scoringCv: 0.05 }),
+    prediction({ playerName: "Consistent", scoringCv: 0.15 }),
+    prediction({ playerName: "Inconsistent", scoringCv: 0.25 }),
+    prediction({ playerName: "MostInconsistent", scoringCv: 0.35 }),
   ];
 
   const scored = scoreConfidence(predictions);
 
-  assert.equal(scored.find((p) => p.playerName === "Tightest")?.confidence, "very_high");
-  assert.equal(scored.find((p) => p.playerName === "Tight")?.confidence, "high");
-  assert.equal(scored.find((p) => p.playerName === "Wide")?.confidence, "medium");
-  assert.equal(scored.find((p) => p.playerName === "Widest")?.confidence, "low");
+  assert.equal(scored.find((p) => p.playerName === "MostConsistent")?.confidence, "very_high");
+  assert.equal(scored.find((p) => p.playerName === "Consistent")?.confidence, "high");
+  assert.equal(scored.find((p) => p.playerName === "Inconsistent")?.confidence, "medium");
+  assert.equal(scored.find((p) => p.playerName === "MostInconsistent")?.confidence, "low");
 });
 
 test("lock-flagged predictions get the lock tier and are excluded from everyone else's quartile boundaries", () => {
   const predictions = [
-    // Without exclusion, this ultra-wide locked row would drag the other three's percentiles down.
-    prediction({ playerName: "Locked", isLock: true, predictedValue: 10, predictedLow: 0, predictedHigh: 20 }),
-    prediction({ playerName: "A", predictedValue: 10, predictedLow: 9.5, predictedHigh: 10.5 }),
-    prediction({ playerName: "B", predictedValue: 10, predictedLow: 8.5, predictedHigh: 11.5 }),
-    prediction({ playerName: "C", predictedValue: 10, predictedLow: 7.5, predictedHigh: 12.5 }),
+    // Without exclusion, this ultra-inconsistent locked row would drag the other three's percentiles down.
+    prediction({ playerName: "Locked", isLock: true, scoringCv: 0.9 }),
+    prediction({ playerName: "A", scoringCv: 0.05 }),
+    prediction({ playerName: "B", scoringCv: 0.15 }),
+    prediction({ playerName: "C", scoringCv: 0.25 }),
   ];
 
   const scored = scoreConfidence(predictions);
@@ -52,38 +52,16 @@ test("lock-flagged predictions get the lock tier and are excluded from everyone 
   assert.equal(scored.find((p) => p.playerName === "C")?.confidence, "low");
 });
 
-test("a zero-width range is treated as maximally confident", () => {
+test("a missing CV (no reliable current-season estimate yet) is treated as least confident", () => {
   const predictions = [
-    prediction({ playerName: "Zero", predictedValue: 10, predictedLow: 10, predictedHigh: 10 }),
-    prediction({ playerName: "Wide", predictedValue: 10, predictedLow: 5, predictedHigh: 15 }),
+    prediction({ playerName: "NoCv", scoringCv: null }),
+    prediction({ playerName: "HasCv", scoringCv: 0.1 }),
   ];
 
   const scored = scoreConfidence(predictions);
 
-  assert.equal(scored.find((p) => p.playerName === "Zero")?.confidence, "very_high");
-});
-
-test("a missing range (null low/high) is treated as least confident", () => {
-  const predictions = [
-    prediction({ playerName: "NoRange", predictedValue: 10, predictedLow: null, predictedHigh: null }),
-    prediction({ playerName: "HasRange", predictedValue: 10, predictedLow: 9, predictedHigh: 11 }),
-  ];
-
-  const scored = scoreConfidence(predictions);
-
-  assert.equal(scored.find((p) => p.playerName === "NoRange")?.confidence, "low");
-  assert.equal(scored.find((p) => p.playerName === "HasRange")?.confidence, "very_high");
-});
-
-test("a non-positive predicted value with a real range is treated as least confident, not a division error", () => {
-  const predictions = [
-    prediction({ playerName: "ZeroValue", predictedValue: 0, predictedLow: -1, predictedHigh: 1 }),
-    prediction({ playerName: "HasRange", predictedValue: 10, predictedLow: 9, predictedHigh: 11 }),
-  ];
-
-  const scored = scoreConfidence(predictions);
-
-  assert.equal(scored.find((p) => p.playerName === "ZeroValue")?.confidence, "low");
+  assert.equal(scored.find((p) => p.playerName === "NoCv")?.confidence, "low");
+  assert.equal(scored.find((p) => p.playerName === "HasCv")?.confidence, "very_high");
 });
 
 test("a single non-lock prediction is very_high (percentile-zero edge case)", () => {

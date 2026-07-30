@@ -152,13 +152,13 @@ export default function Home() {
                     <TableHead className="text-right">
                       <HeaderTip
                         label="Range"
-                        tip="Expected range around the prediction (±1 standard deviation in projected minutes, scaled by the points-per-minute rate)."
+                        tip="Expected range around the prediction, based on typical historical error for predictions of this size (from a backtest across past seasons)."
                       />
                     </TableHead>
                     <TableHead className="text-right">
                       <HeaderTip
                         label="Confidence"
-                        tip="How tight this prediction's range is relative to its value, compared to today's other predictions (Low = widest quarter, Very High = tightest quarter). It's a Lock is a separate, rare tier based on the player's own historical scoring consistency, not range width -- a real but modest edge, not a guarantee."
+                        tip="Based on how consistent this player's own recent scoring has been, compared to today's other predictions (Low = least consistent quarter, Very High = most consistent quarter). It's a Lock is a stricter cutoff on the same signal -- a real but modest edge, not a guarantee."
                       />
                     </TableHead>
                     <TableHead className="text-right">

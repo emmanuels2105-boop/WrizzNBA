@@ -2,9 +2,26 @@ import sqlite3
 from statistics import mean, stdev
 from typing import Optional
 
-from pipeline.config import DEFAULT_MINUTES_WINDOW, LOCK_CV_THRESHOLD, LOCK_WINDOW
+from pipeline.config import (
+    DEFAULT_MINUTES_WINDOW,
+    LOCK_CV_THRESHOLD,
+    LOCK_WINDOW,
+    RESIDUAL_STDEV_BY_TERCILE,
+    RESIDUAL_TERCILE_BOUNDARIES,
+)
 from pipeline.db import repository
 from pipeline.prediction.baseline import Prediction, _select_window
+
+
+def residual_stdev(predicted_value: float) -> float:
+    """Empirical historical-error stdev for a prediction of this size (see
+    RESIDUAL_STDEV_BY_TERCILE in config.py for how these were derived)."""
+    low_bound, mid_bound = RESIDUAL_TERCILE_BOUNDARIES
+    if predicted_value < low_bound:
+        return RESIDUAL_STDEV_BY_TERCILE["low"]
+    if predicted_value < mid_bound:
+        return RESIDUAL_STDEV_BY_TERCILE["mid"]
+    return RESIDUAL_STDEV_BY_TERCILE["high"]
 
 
 def minutes_based_prediction_from_history(
@@ -32,9 +49,14 @@ def minutes_based_prediction_from_history(
       new starter shows up within a few games), so a shorter, more recent window
       is more responsive to exactly the kind of shift a flat rolling average misses.
 
-    Range (low/high) comes from variance in the minutes projection only, since the
-    rate is comparatively stable; `None` when the minutes window is a single game
-    (no stdev), same convention as the plain rolling-average model.
+    Range (low/high) comes from `residual_stdev()` -- the empirical historical
+    error for a prediction of this size, from a walk-forward backtest -- rather
+    than variance in the minutes projection. A backtest of the old
+    minutes-variance range found it was actually *inversely* correlated with
+    real accuracy (tightest-range predictions had the worst error) and only a
+    25% hit-rate against a ~65-70% target; this range is calibrated directly off
+    historical error instead, and applies uniformly including single-game
+    cold starts (which the old range couldn't cover, having no stdev to draw on).
     """
     paired = [(season, (minutes, value)) for season, minutes, value in history]
     rate_window = _select_window(paired, target_season, n)
@@ -52,14 +74,45 @@ def minutes_based_prediction_from_history(
     if minutes_window is None:
         return None
 
-    predicted_minutes = mean(minutes_window)
-    if len(minutes_window) > 1:
-        minutes_stdev = stdev(minutes_window)
-        low = max(0.0, (predicted_minutes - minutes_stdev) * rate)
-        high = (predicted_minutes + minutes_stdev) * rate
-        return Prediction(value=predicted_minutes * rate, low=low, high=high)
+    predicted_value = mean(minutes_window) * rate
+    stdev_r = residual_stdev(predicted_value)
+    return Prediction(value=predicted_value, low=max(0.0, predicted_value - stdev_r), high=predicted_value + stdev_r)
 
-    return Prediction(value=predicted_minutes * rate, low=None, high=None)
+
+def scoring_cv(
+    history: list[tuple[str, float, float]],
+    target_season: str,
+    n: int = LOCK_WINDOW,
+) -> Optional[float]:
+    """Coefficient of variation (stdev/mean) of a player's last `n` games'
+    points, or None if there's no reliable current-season estimate yet.
+
+    Empirical basis (see the walk-forward calibration run against 2024-2026
+    data): neither the predicted range's absolute nor relative width
+    correlates with actual accuracy the way "confidence" implies --
+    counterintuitively, *tighter* ranges had *worse* accuracy, because a narrow
+    absolute band around a high-usage star is easier to miss than a wide-looking
+    relative band around a bench player who barely deviates from near-zero. The
+    one signal that did show a real, monotonic relationship with lower relative
+    error was a player's own historical scoring consistency -- this CV. Requires
+    a full window of *strictly current-season* games (no cold-start/prior-season
+    blending) so the estimate itself isn't diluted by stale data; returns None
+    rather than a blended/partial estimate when that's not available yet.
+
+    Used two ways: thresholded (see is_lock_eligible) for the rare "It's a Lock"
+    tier, and as the ranking signal for the ordinary Low/Medium/High/Very High
+    tiers (see lib/confidence.ts) -- lower CV ranks as more confident.
+    """
+    current_season_points = [points for season, _minutes, points in history if season == target_season]
+    if len(current_season_points) < n:
+        return None
+
+    window = current_season_points[-n:]
+    mean_points = mean(window)
+    if mean_points <= 0:
+        return None
+
+    return stdev(window) / mean_points
 
 
 def is_lock_eligible(
@@ -70,33 +123,11 @@ def is_lock_eligible(
 ) -> bool:
     """Whether a player's own recent scoring consistency earns the rare "It's a
     lock" tier, on top of (not instead of) the normal Low/Medium/High/Very High
-    range-based confidence.
-
-    Empirical basis (see the walk-forward calibration run against 2024-2026 data
-    before this was added): neither the predicted range's absolute nor relative
-    width correlates with actual hit-rate/error the way "confidence" implies --
-    counterintuitively, *tighter* ranges had *worse* hit rates, because a narrow
-    absolute band around a high-usage star is easier to miss than a wide-looking
-    relative band around a bench player who barely deviates from near-zero. The
-    one signal that did show a real, monotonic relationship with lower relative
-    error was a player's own historical scoring consistency -- the coefficient of
-    variation (stdev/mean) of their last `n` games' points. Lower CV genuinely
-    predicts better relative accuracy (MAPE ~32% in the tightest historical CV
-    band vs. ~144% in the loosest) -- a real but modest edge, not a guarantee,
-    which is exactly why this is reserved for a strict cutoff and requires a full
-    window of *strictly current-season* games (no cold-start/prior-season
-    blending) so the CV estimate itself isn't diluted by stale data.
+    tiers. A real but modest edge (MAPE ~32% in the tightest historical CV band
+    vs. ~144% in the loosest), not a guarantee -- see scoring_cv() for the basis.
     """
-    current_season_points = [points for season, _minutes, points in history if season == target_season]
-    if len(current_season_points) < n:
-        return False
-
-    window = current_season_points[-n:]
-    mean_points = mean(window)
-    if mean_points <= 0:
-        return False
-
-    return (stdev(window) / mean_points) < cv_threshold
+    cv = scoring_cv(history, target_season, n)
+    return cv is not None and cv < cv_threshold
 
 
 def predict_for_player_minutes_based(

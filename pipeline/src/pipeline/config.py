@@ -19,3 +19,17 @@ DEFAULT_MINUTES_WINDOW = 5
 # games (LOCK_WINDOW), with points coefficient-of-variation under LOCK_CV_THRESHOLD.
 LOCK_WINDOW = 10
 LOCK_CV_THRESHOLD = 0.20
+
+# Empirical residual stdev for predicted_low/predicted_high, derived from a
+# walk-forward backtest of minutes_based across 13,729 historical predictions
+# (2024-2026 seasons) -- see pipeline/README.md "Known risks" for how this
+# replaced the old minutes-variance-based range, which had a 25% hit-rate
+# against a target of ~65-70%. Residual stdev (actual - predicted) scales with
+# scoring volume, so it's bucketed by tercile of predicted_value rather than a
+# single flat number: low tercile 3.939, mid 5.261, high 6.816.
+RESIDUAL_TERCILE_BOUNDARIES = (5.14, 10.59)  # (low/mid boundary, mid/high boundary)
+RESIDUAL_STDEV_BY_TERCILE = {
+    "low": 3.939,
+    "mid": 5.261,
+    "high": 6.816,
+}

@@ -92,3 +92,26 @@ def test_get_player_history_orders_chronologically_and_skips_nulls(conn):
     history = repository.get_player_history(conn, 100, "points")
 
     assert history == [("2025", 10), ("2026", 12), ("2026", 15)]
+
+
+def test_upsert_prediction_stores_and_updates_scoring_cv(conn):
+    repository.upsert_team(conn, RawTeam(1, "NYL", "Liberty"), "t")
+    repository.upsert_team(conn, RawTeam(2, "ATL", "Dream"), "t")
+    repository.upsert_player(conn, 100, "Test Player", 1, "t")
+    repository.upsert_game(conn, "g1", "2026", "2026-05-01", 1, 2, "SCHEDULED", "t")
+
+    repository.upsert_prediction(
+        conn, player_id=100, game_id="g1", prop_type="POINTS", predicted_value=10.0,
+        predicted_low=6.0, predicted_high=14.0, model_name="minutes_based", model_version="v2",
+        generated_at="t1", scoring_cv=None,
+    )
+    row = conn.execute("SELECT scoring_cv FROM predictions").fetchone()
+    assert row["scoring_cv"] is None
+
+    repository.upsert_prediction(
+        conn, player_id=100, game_id="g1", prop_type="POINTS", predicted_value=11.0,
+        predicted_low=7.0, predicted_high=15.0, model_name="minutes_based", model_version="v2",
+        generated_at="t2", scoring_cv=0.15,
+    )
+    row = conn.execute("SELECT scoring_cv FROM predictions").fetchone()
+    assert row["scoring_cv"] == 0.15

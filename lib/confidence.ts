@@ -13,41 +13,37 @@ export type PointsPrediction = {
   confidence: ConfidenceLevel;
 };
 
-export type RawPrediction = Omit<PointsPrediction, "confidence"> & { isLock: boolean };
+export type RawPrediction = Omit<PointsPrediction, "confidence"> & {
+  isLock: boolean;
+  scoringCv: number | null;
+};
 
-// Relative half-width of the predicted range -- the basis for confidence
-// bucketing below. Smaller = tighter range relative to the prediction = more
-// confident. A zero-width range (e.g. a player projected for exactly 0 points
-// with no variance) is treated as maximally confident regardless of the
-// predicted value, which also sidesteps a divide-by-zero on predictedValue.
-function relativeHalfWidth(prediction: RawPrediction): number {
-  if (prediction.predictedLow === null || prediction.predictedHigh === null) {
-    return Infinity; // no range at all (single-game cold start) -- least confident
-  }
-  const halfWidth = (prediction.predictedHigh - prediction.predictedLow) / 2;
-  if (halfWidth === 0) return 0;
-  if (prediction.predictedValue <= 0) return Infinity;
-  return halfWidth / prediction.predictedValue;
-}
-
-// Buckets predictions into quartiles of relative-range-width *within this
-// batch*, rather than fixed thresholds, so "Confidence" stays meaningful (and
-// roughly evenly distributed) as the underlying data's typical spread changes,
-// instead of drifting toward "everything is Low" or "everything is Very High".
+// Buckets predictions into quartiles of scoring_cv (coefficient of variation of
+// the player's own recent points -- see scoring_cv() in
+// prediction/minutes_based.py) *within this batch*, rather than fixed
+// thresholds, so "Confidence" stays meaningful as the underlying data's typical
+// spread changes. Lower CV = more consistent = ranked more confident.
 //
-// Rows flagged is_lock (isLock) by the pipeline -- based on the player's own
-// historical scoring consistency, not range width, see is_lock_eligible() in
-// prediction/minutes_based.py -- skip the quartile system entirely and get the
-// rare "lock" tier instead. They're excluded from the population used to
-// compute quartile boundaries for everyone else, since they're a separate tier.
+// A walk-forward backtest across 13,729 historical predictions found this
+// correlates with real accuracy (MAPE ~31% in the tightest CV band vs. ~60-70%
+// elsewhere). The previously-used range-width signal was found *inversely*
+// correlated with accuracy (tightest-range predictions had the worst error) and
+// was removed -- see pipeline/README.md "Known risks".
+//
+// Rows flagged is_lock (isLock) by the pipeline -- a stricter cutoff on the same
+// CV signal, see is_lock_eligible() in prediction/minutes_based.py -- skip the
+// quartile system entirely and get the rare "lock" tier instead. They're
+// excluded from the population used to compute quartile boundaries for everyone
+// else, since they're a separate tier.
 export function scoreConfidence(predictions: RawPrediction[]): PointsPrediction[] {
   const nonLockedEntries = predictions
     .map((prediction, index) => ({ index, prediction }))
     .filter(({ prediction }) => !prediction.isLock);
 
   const ranked = nonLockedEntries
-    .map(({ index, prediction }) => ({ index, width: relativeHalfWidth(prediction) }))
-    .sort((a, b) => a.width - b.width);
+    // No reliable current-season CV yet (early-season cold start) -- least confident.
+    .map(({ index, prediction }) => ({ index, cv: prediction.scoringCv ?? Infinity }))
+    .sort((a, b) => a.cv - b.cv);
 
   const confidenceByIndex = new Map<number, ConfidenceLevel>();
   ranked.forEach(({ index }, rank) => {
@@ -63,7 +59,7 @@ export function scoreConfidence(predictions: RawPrediction[]): PointsPrediction[
     confidenceByIndex.set(index, confidence);
   });
 
-  return predictions.map(({ isLock, ...rest }, index) => ({
+  return predictions.map(({ isLock, scoringCv: _scoringCv, ...rest }, index) => ({
     ...rest,
     confidence: isLock ? "lock" : (confidenceByIndex.get(index) ?? "low"),
   }));

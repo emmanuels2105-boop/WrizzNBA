@@ -136,19 +136,21 @@ def upsert_prediction(
     model_version: str,
     generated_at: str,
     is_lock: bool = False,
+    scoring_cv: Optional[float] = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO predictions (
             player_id, game_id, prop_type, predicted_value, predicted_low, predicted_high,
-            is_lock, model_name, model_version, generated_at
+            is_lock, scoring_cv, model_name, model_version, generated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(player_id, game_id, prop_type, model_name, model_version) DO UPDATE SET
             predicted_value = excluded.predicted_value,
             predicted_low = excluded.predicted_low,
             predicted_high = excluded.predicted_high,
             is_lock = excluded.is_lock,
+            scoring_cv = excluded.scoring_cv,
             generated_at = excluded.generated_at
         """,
         (
@@ -159,6 +161,7 @@ def upsert_prediction(
             predicted_low,
             predicted_high,
             int(is_lock),
+            scoring_cv,
             model_name,
             model_version,
             generated_at,

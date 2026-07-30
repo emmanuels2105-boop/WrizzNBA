@@ -1,4 +1,11 @@
-from pipeline.prediction.minutes_based import is_lock_eligible, minutes_based_prediction_from_history
+from statistics import mean, stdev
+
+from pipeline.prediction.minutes_based import (
+    is_lock_eligible,
+    minutes_based_prediction_from_history,
+    residual_stdev,
+    scoring_cv,
+)
 
 
 def test_decoupled_windows_differ_from_plain_points_average():
@@ -35,12 +42,14 @@ def test_all_dnp_rate_window_returns_none():
     assert pred is None
 
 
-def test_single_game_cold_start_has_no_range():
+def test_single_game_cold_start_still_gets_a_residual_based_range():
+    # The range no longer comes from minutes-window stdev (which needs >=2 games),
+    # so a single-game cold start still gets a real, calibrated range.
     history = [("2026", 20.0, 10.0)]
     pred = minutes_based_prediction_from_history(history, target_season="2026", n=10, minutes_n=5)
     assert pred.value == 10.0  # 20 minutes * (10/20 rate)
-    assert pred.low is None
-    assert pred.high is None
+    assert pred.low == 10.0 - residual_stdev(10.0)
+    assert pred.high == 10.0 + residual_stdev(10.0)
 
 
 def test_falls_back_to_prior_season_when_current_below_window():
@@ -85,3 +94,27 @@ def test_lock_ignores_prior_season_games_toward_the_window():
     current = [("2026", 30.0, 20.0)] * 8
     history = prior + current
     assert is_lock_eligible(history, target_season="2026", n=10, cv_threshold=0.20) is False
+
+
+def test_scoring_cv_returns_none_with_fewer_than_n_current_season_games():
+    history = [("2026", 30.0, 20.0)] * 9
+    assert scoring_cv(history, target_season="2026", n=10) is None
+
+
+def test_scoring_cv_returns_none_for_non_positive_mean():
+    # Every game scoreless -- CV (stdev/mean) is undefined, not a divide-by-zero.
+    history = [("2026", 20.0, 0.0)] * 10
+    assert scoring_cv(history, target_season="2026", n=10) is None
+
+
+def test_scoring_cv_matches_stdev_over_mean_of_the_window():
+    points = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28]
+    history = [("2026", 25.0, p) for p in points]
+    cv = scoring_cv(history, target_season="2026", n=10)
+    assert cv == stdev(points) / mean(points)
+
+
+def test_residual_stdev_picks_the_correct_tercile_bucket():
+    assert residual_stdev(3.0) == 3.939  # low tercile
+    assert residual_stdev(7.0) == 5.261  # mid tercile
+    assert residual_stdev(15.0) == 6.816  # high tercile
