@@ -1,8 +1,9 @@
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
-from pipeline.config import DEFAULT_MINUTES_WINDOW, LOCK_WINDOW
+from pipeline.config import DEFAULT_MINUTES_WINDOW, LOCK_WINDOW, TOP_PLAYERS_PER_GAME
 from pipeline.db import repository
 from pipeline.prediction.minutes_based import (
     is_lock_eligible,
@@ -31,14 +32,13 @@ class GenerateSummary:
         return f"predictions={self.predictions_written} skipped={len(self.skipped_players)}"
 
 
-def _next_scheduled_game_per_team(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
-    """Maps team_id -> that team's soonest SCHEDULED game (rows already come
-    ordered by game_date ascending from get_scheduled_games)."""
-    next_game_for_team: dict[int, sqlite3.Row] = {}
-    for game in repository.get_scheduled_games(conn):
-        for team_id in (game["home_team_id"], game["away_team_id"]):
-            next_game_for_team.setdefault(team_id, game)
-    return next_game_for_team
+def _games_tomorrow(conn: sqlite3.Connection, today: Optional[date] = None) -> list[sqlite3.Row]:
+    """Only tomorrow's games -- a sportsbook only posts a game's props the day
+    before, and generating predictions for games days out was never checkable
+    against a real line anyway."""
+    today = today or datetime.now(timezone.utc).date()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    return [g for g in repository.get_scheduled_games(conn) if g["game_date"] == tomorrow]
 
 
 def generate_predictions(
@@ -46,22 +46,31 @@ def generate_predictions(
     prop_type: PropType,
     n: int = 10,
     minutes_n: int = DEFAULT_MINUTES_WINDOW,
+    top_n: int = TOP_PLAYERS_PER_GAME,
+    today: Optional[date] = None,
 ) -> GenerateSummary:
     summary = GenerateSummary()
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    for team_id, game in _next_scheduled_game_per_team(conn).items():
-        for player in repository.get_players_for_team(conn, team_id):
-            history = repository.get_player_minutes_history(
-                conn, player["player_id"], prop_type.stat_column
-            )
-            prediction = minutes_based_prediction_from_history(
-                history, game["season"], n, minutes_n
-            )
-            if prediction is None:
-                summary.skipped_players.append((player["player_id"], player["full_name"]))
-                continue
+    for game in _games_tomorrow(conn, today):
+        candidates: list[tuple[sqlite3.Row, list, object]] = []
+        for team_id in (game["home_team_id"], game["away_team_id"]):
+            for player in repository.get_players_for_team(conn, team_id):
+                history = repository.get_player_minutes_history(
+                    conn, player["player_id"], prop_type.stat_column
+                )
+                prediction = minutes_based_prediction_from_history(
+                    history, game["season"], n, minutes_n
+                )
+                if prediction is None:
+                    summary.skipped_players.append((player["player_id"], player["full_name"]))
+                    continue
+                candidates.append((player, history, prediction))
 
+        # Only the top_n highest-projected players across both rosters combined --
+        # a sportsbook posts props for a game's notable scorers, not its full bench.
+        candidates.sort(key=lambda c: c[2].value, reverse=True)
+        for player, history, prediction in candidates[:top_n]:
             repository.upsert_prediction(
                 conn,
                 player_id=player["player_id"],

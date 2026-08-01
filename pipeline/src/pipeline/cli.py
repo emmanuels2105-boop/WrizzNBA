@@ -53,7 +53,7 @@ def predict_command(
     n: int = typer.Option(DEFAULT_ROLLING_WINDOW, "--n", help="Rolling window size (games)"),
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", help="Path to the SQLite database file"),
 ) -> None:
-    """Generate predictions for each team's next scheduled game."""
+    """Generate predictions for the top scorers in tomorrow's games only."""
     conn = get_connection(db_path)
     try:
         init_db(conn)  # idempotent -- applies any schema migrations (e.g. new columns)

@@ -104,7 +104,7 @@ export default function Home() {
             WNBA Points Predictions
           </h1>
           <p className="text-sm text-muted-foreground">
-            Projected minutes &times; points-per-minute rate, for each team&apos;s next scheduled game.
+            Projected minutes &times; points-per-minute rate, for the top 10 projected scorers in each of tomorrow&apos;s games.
           </p>
         </div>
 

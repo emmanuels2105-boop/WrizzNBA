@@ -18,7 +18,7 @@ uv sync
 ```
 uv run pipeline init-db                      # create schema (idempotent)
 uv run pipeline ingest [--season 2026 ...]   # fetch + store game logs and schedule
-uv run pipeline predict [--prop-type POINTS] [--n 10]
+uv run pipeline predict [--prop-type POINTS] [--n 10]  # top 10 scorers/game, tomorrow's games only
 uv run pipeline backtest [--model rolling_average|minutes_based] [--prop-type POINTS] [--n 10] [--minutes-n 5] [--season 2026 ...]
 ```
 
